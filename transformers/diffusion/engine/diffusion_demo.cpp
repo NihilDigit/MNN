@@ -1,5 +1,5 @@
 #include <iostream>
-#include "diffusion/stable_diffusion.hpp"
+#include "diffusion/diffusion.hpp"
 #define MNN_OPEN_TIME_TRACE
 #include <MNN/AutoTime.hpp>
 #include <MNN/expr/ExecutorScope.hpp>
