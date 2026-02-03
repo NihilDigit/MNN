@@ -986,6 +986,85 @@ bool Llm::setPrefixCacheFile(const std::string& filename, int flag) {
 
 bool Llm::reuse_kv() { return mConfig->reuse_kv(); }
 
+void Llm::resetGenSeqLen() {
+    mContext->gen_seq_len = 0;
+}
+
+size_t Llm::loadPrefixCache(const std::string& filename) {
+    // Check if prefix cache files exist
+    bool filesExist = true;
+    for(int i = 0; i < mConfig->layer_nums(); i++) {
+        auto k_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + "_" + std::to_string(i) + "_sync.k";
+        if(!MNNFileExist(k_file.c_str())) {
+            filesExist = false;
+            break;
+        }
+        auto v_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + "_" + std::to_string(i) + "_sync.v";
+        if(!MNNFileExist(v_file.c_str())) {
+            filesExist = false;
+            break;
+        }
+    }
+
+    if (!filesExist) {
+        MNN_PRINT("loadPrefixCache: prefix cache files not found for '%s'\n", filename.c_str());
+        return 0;
+    }
+
+    // Get the prefix length from the first key file size
+    auto k_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + "_0_sync.k";
+    auto fd = MNNOpenFile(k_file.c_str(), MNN_FILE_READ);
+    if (fd == INVALID_FILE) {
+        MNN_PRINT("loadPrefixCache: failed to open key file\n");
+        return 0;
+    }
+    auto fileSize = MNNGetFileSize(fd);
+    MNNCloseFile(fd);
+
+    // Calculate prefix length from file size
+    // Key tensor shape: [kv_num_head, seq_len, head_dim] with packing
+    int kv_num_head = mConfig->kv_head_num();
+    int head_dim = mConfig->head_dim();
+    int bytes = 4; // float32
+    size_t prefixLength = fileSize / (kv_num_head * ROUND_UP(head_dim, 4) * bytes);
+
+    if (prefixLength == 0) {
+        MNN_PRINT("loadPrefixCache: invalid prefix length\n");
+        return 0;
+    }
+
+    // Reset state and prepare for loading
+    reset();
+
+    // Set up meta for loading
+    mMeta->file_name = filename;
+    mMeta->file_flag = KVMeta::PendingRead;
+    mMeta->seqlen_in_disk = prefixLength;
+    mMeta->layer_index = 0;
+
+    // Create a dummy embedding to trigger KV cache loading
+    // We need to call forward() to actually load the KV cache
+    std::vector<int> dummy_ids(1, 0); // Single dummy token
+    auto hidden_states = embedding(dummy_ids);
+    forwardVec(hidden_states);
+
+    // Update context
+    mMeta->previous += mMeta->seqlen_in_disk;
+    mContext->all_seq_len = mMeta->previous;
+
+    // Reset meta status
+    mMeta->seqlen_in_disk = 0;
+    mMeta->file_name = "";
+    mMeta->file_flag = KVMeta::NoChange;
+    mMeta->layer_index = 0;
+
+    // Reset gen_seq_len for prefill-only mode
+    resetGenSeqLen();
+
+    MNN_PRINT("loadPrefixCache: loaded %zu tokens from '%s'\n", prefixLength, filename.c_str());
+    return prefixLength;
+}
+
 static inline bool needNewVar(VARP var, int axis, int seq_len, int kv_seq_len = 0) {
     if (var == nullptr) {
         return true;

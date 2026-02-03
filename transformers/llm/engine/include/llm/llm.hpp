@@ -122,6 +122,9 @@ public:
     size_t getCurrentHistory() const;
     void eraseHistory(size_t begin, size_t end);
     bool setPrefixCacheFile(const std::string& filename, int flag = 0);
+    // Load prefix cache from disk directly (one-call mode for Stem system)
+    // Returns the loaded sequence length, or 0 if failed
+    size_t loadPrefixCache(const std::string& filename);
     virtual void response(const std::vector<int>& input_ids, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const std::string& user_content, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const ChatMessages& chat_prompts, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
@@ -132,6 +135,8 @@ public:
     std::vector<int> generate(MNN::Express::VARP input_embeds, int max_tokens = -1);
     bool stoped();
     bool reuse_kv();
+    // Stem context support: reset gen_seq_len for prefill-only mode
+    void resetGenSeqLen();
     // config function
     std::string dump_config();
     bool set_config(const std::string& content);
