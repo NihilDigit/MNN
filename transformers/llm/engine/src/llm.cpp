@@ -990,6 +990,49 @@ void Llm::resetGenSeqLen() {
     mContext->gen_seq_len = 0;
 }
 
+size_t Llm::savePrefixCache(const std::string& filename) {
+    size_t currentLength = mContext->all_seq_len;
+    if (currentLength == 0) {
+        MNN_PRINT("savePrefixCache: no content to save\n");
+        return 0;
+    }
+
+    // Create prefix cache directory if needed
+    if(!MNNCreateDir(mConfig->prefix_cache_path().c_str())) {
+        MNN_PRINT("savePrefixCache: failed to create directory '%s'\n", mConfig->prefix_cache_path().c_str());
+        return 0;
+    }
+
+    // Set up meta for saving
+    mMeta->file_name = filename;
+    mMeta->file_flag = KVMeta::PendingWrite;
+    mMeta->layer_index = 0;
+
+    // Trigger a dummy forward to save the KV cache
+    // Note: The actual saving happens in KVCacheManager during forward
+    std::vector<int> dummy_ids(1, 0);
+    auto hidden_states = embedding(dummy_ids);
+    forwardVec(hidden_states);
+
+    // Reset meta status
+    mMeta->file_name = "";
+    mMeta->file_flag = KVMeta::NoChange;
+    mMeta->layer_index = 0;
+
+    // Save metadata file with the prefix length
+    auto meta_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + ".meta";
+    std::ofstream ofs(meta_file);
+    if (ofs.is_open()) {
+        ofs << currentLength;
+        ofs.close();
+        MNN_PRINT("savePrefixCache: saved %zu tokens to '%s'\n", currentLength, filename.c_str());
+    } else {
+        MNN_PRINT("savePrefixCache: failed to write metadata file\n");
+    }
+
+    return currentLength;
+}
+
 size_t Llm::loadPrefixCache(const std::string& filename, size_t prefixLength) {
     // Check if prefix cache files exist
     bool filesExist = true;
@@ -1009,6 +1052,20 @@ size_t Llm::loadPrefixCache(const std::string& filename, size_t prefixLength) {
     if (!filesExist) {
         MNN_PRINT("loadPrefixCache: prefix cache files not found for '%s'\n", filename.c_str());
         return 0;
+    }
+
+    // If prefixLength not provided, try to read from metadata file
+    if (prefixLength == 0) {
+        auto meta_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + ".meta";
+        std::ifstream ifs(meta_file);
+        if (ifs.is_open()) {
+            ifs >> prefixLength;
+            ifs.close();
+            MNN_PRINT("loadPrefixCache: read prefix length %zu from metadata\n", prefixLength);
+        } else {
+            MNN_PRINT("loadPrefixCache: no metadata file and no prefix length provided\n");
+            return 0;
+        }
     }
 
     if (prefixLength == 0) {

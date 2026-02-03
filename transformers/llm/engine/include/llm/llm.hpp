@@ -122,9 +122,13 @@ public:
     size_t getCurrentHistory() const;
     void eraseHistory(size_t begin, size_t end);
     bool setPrefixCacheFile(const std::string& filename, int flag = 0);
+    // Save current KV cache as prefix cache (for Stem system)
+    // Returns the saved sequence length, or 0 if failed
+    size_t savePrefixCache(const std::string& filename);
     // Load prefix cache from disk directly (one-call mode for Stem system)
+    // If prefixLength is 0, it will be read from the .meta file
     // Returns the loaded sequence length, or 0 if failed
-    size_t loadPrefixCache(const std::string& filename, size_t prefixLength);
+    size_t loadPrefixCache(const std::string& filename, size_t prefixLength = 0);
     virtual void response(const std::vector<int>& input_ids, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const std::string& user_content, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const ChatMessages& chat_prompts, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
