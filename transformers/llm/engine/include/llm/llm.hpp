@@ -124,7 +124,7 @@ public:
     bool setPrefixCacheFile(const std::string& filename, int flag = 0);
     // Load prefix cache from disk directly (one-call mode for Stem system)
     // Returns the loaded sequence length, or 0 if failed
-    size_t loadPrefixCache(const std::string& filename);
+    size_t loadPrefixCache(const std::string& filename, size_t prefixLength);
     virtual void response(const std::vector<int>& input_ids, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const std::string& user_content, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
     void response(const ChatMessages& chat_prompts, std::ostream* os = &std::cout, const char* end_with = nullptr, int max_new_tokens = -1);
