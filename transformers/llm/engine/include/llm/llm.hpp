@@ -122,7 +122,14 @@ public:
     size_t getCurrentHistory() const;
     void eraseHistory(size_t begin, size_t end);
     bool setPrefixCacheFile(const std::string& filename, int flag = 0);
+    // Prepare to save prefix cache - must be called BEFORE prefill
+    // This sets up the meta flags so KVCacheManager creates files in the right location
+    void prepareSavePrefixCache(const std::string& filename);
+    // Finish saving prefix cache - call AFTER prefill to create sync files and metadata
+    // Returns the saved sequence length, or 0 if failed
+    size_t finishSavePrefixCache(const std::string& filename);
     // Save current KV cache as prefix cache (for Stem system)
+    // NOTE: This only works if prepareSavePrefixCache was called before prefill
     // Returns the saved sequence length, or 0 if failed
     size_t savePrefixCache(const std::string& filename);
     // Load prefix cache from disk directly (one-call mode for Stem system)

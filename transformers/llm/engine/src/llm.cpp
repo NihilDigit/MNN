@@ -990,6 +990,66 @@ void Llm::resetGenSeqLen() {
     mContext->gen_seq_len = 0;
 }
 
+void Llm::prepareSavePrefixCache(const std::string& filename) {
+    // Create prefix cache directory if needed
+    if(!MNNCreateDir(mConfig->prefix_cache_path().c_str())) {
+        MNN_PRINT("prepareSavePrefixCache: failed to create directory '%s'\n", mConfig->prefix_cache_path().c_str());
+        return;
+    }
+
+    // Set up meta for saving - this must be done BEFORE prefill
+    // so that KVCacheManager::onResize() sees PendingWrite and creates files in the right location
+    mMeta->file_name = filename;
+    mMeta->file_flag = KVMeta::PendingWrite;
+    mMeta->layer_index = 0;
+    MNN_PRINT("prepareSavePrefixCache: prepared to save to '%s'\n", filename.c_str());
+}
+
+size_t Llm::finishSavePrefixCache(const std::string& filename) {
+    size_t currentLength = mContext->all_seq_len;
+    if (currentLength == 0) {
+        MNN_PRINT("finishSavePrefixCache: no content to save\n");
+        return 0;
+    }
+
+    // Reset meta status
+    mMeta->file_name = "";
+    mMeta->file_flag = KVMeta::NoChange;
+    mMeta->layer_index = 0;
+
+    // Create _sync.k and _sync.v files to mark the cache as valid
+    for(int i = 0; i < mConfig->layer_nums(); i++) {
+        auto base_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + "_" + std::to_string(i);
+        auto k_file = base_file + ".k";
+        auto v_file = base_file + ".v";
+
+        if(MNNFileExist(k_file.c_str())) {
+            auto k_sync_file = base_file + "_sync.k";
+            MNNCreateFile(k_sync_file.c_str());
+            MNN_PRINT("finishSavePrefixCache: created sync file '%s'\n", k_sync_file.c_str());
+        } else {
+            MNN_PRINT("finishSavePrefixCache: WARNING - k file not found '%s'\n", k_file.c_str());
+        }
+        if(MNNFileExist(v_file.c_str())) {
+            auto v_sync_file = base_file + "_sync.v";
+            MNNCreateFile(v_sync_file.c_str());
+        }
+    }
+
+    // Save metadata file with the prefix length
+    auto meta_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + ".meta";
+    std::ofstream ofs(meta_file);
+    if (ofs.is_open()) {
+        ofs << currentLength;
+        ofs.close();
+        MNN_PRINT("finishSavePrefixCache: saved %zu tokens to '%s'\n", currentLength, filename.c_str());
+    } else {
+        MNN_PRINT("finishSavePrefixCache: failed to write metadata file\n");
+    }
+
+    return currentLength;
+}
+
 size_t Llm::savePrefixCache(const std::string& filename) {
     size_t currentLength = mContext->all_seq_len;
     if (currentLength == 0) {
@@ -1018,6 +1078,23 @@ size_t Llm::savePrefixCache(const std::string& filename) {
     mMeta->file_name = "";
     mMeta->file_flag = KVMeta::NoChange;
     mMeta->layer_index = 0;
+
+    // Create _sync.k and _sync.v files to mark the cache as valid
+    // These files are normally created in KVCacheManager::onClear(), but we need them now
+    for(int i = 0; i < mConfig->layer_nums(); i++) {
+        auto base_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + "_" + std::to_string(i);
+        auto k_file = base_file + ".k";
+        auto v_file = base_file + ".v";
+
+        if(MNNFileExist(k_file.c_str())) {
+            auto k_sync_file = base_file + "_sync.k";
+            MNNCreateFile(k_sync_file.c_str());
+        }
+        if(MNNFileExist(v_file.c_str())) {
+            auto v_sync_file = base_file + "_sync.v";
+            MNNCreateFile(v_sync_file.c_str());
+        }
+    }
 
     // Save metadata file with the prefix length
     auto meta_file = MNNFilePathConcat(mConfig->prefix_cache_path(), filename) + ".meta";
