@@ -1031,9 +1031,11 @@ size_t Llm::loadPrefixCache(const std::string& filename, size_t prefixLength) {
     auto hidden_states = embedding(dummy_ids);
     forwardVec(hidden_states);
 
-    // Update context
-    mMeta->previous += mMeta->seqlen_in_disk;
-    mContext->all_seq_len = mMeta->previous;
+    // After forwardVec, sync() has been called and previous = 1 (from dummy token)
+    // We need to set previous to the actual prefix length, not add to it
+    // The KV cache now contains prefixLength entries loaded from disk
+    mMeta->previous = prefixLength;
+    mContext->all_seq_len = prefixLength;
 
     // Reset meta status
     mMeta->seqlen_in_disk = 0;
